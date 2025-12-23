@@ -145,7 +145,7 @@ def login(username, password):
             return err_elem.text.strip() if err_elem else "Login failed"
             
     except Exception as e:
-        return f"Network Error: {str(e)}"
+        return "Error occurred, try again. If not reached, the server might be unreachable."
 
 def fetch_user_profile():
     try:

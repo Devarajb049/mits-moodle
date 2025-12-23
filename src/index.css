@@ -162,6 +162,7 @@ body {
   font-size: 1.5rem;
   font-weight: 700;
   text-align: center;
+  justify-content: center;
 }
 
 .sidebar-header {

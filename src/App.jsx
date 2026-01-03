@@ -19,7 +19,9 @@ import {
   UploadCloud,
   File,
   Menu,
-  X
+  X,
+  ChevronUp,
+  Edit
 } from 'lucide-react';
 
 const API_BASE = '/moodle';
@@ -40,20 +42,37 @@ function App() {
   const [courses, setCourses] = useState([]);
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [materials, setMaterials] = useState([]);
-  const [privateFiles, setPrivateFiles] = useState([]);
   const [userData, setUserData] = useState(null);
   const [logoutUrl, setLogoutUrl] = useState(null);
 
   // Navigation State
   const [folderHistory, setFolderHistory] = useState([]);
-  const [view, setView] = useState('dashboard'); // 'dashboard', 'course', 'upload'
+  const [view, setView] = useState('dashboard'); // 'dashboard', 'course'
 
   // Mobile State
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   useEffect(() => {
     checkSession();
   }, []);
+
+  // Scroll Listener for Back to Top
+  useEffect(() => {
+    const handleScroll = () => {
+      const mainContent = document.querySelector('.main-content');
+      if (mainContent) {
+        setShowScrollTop(mainContent.scrollTop > 300);
+      }
+    };
+
+    const mainContent = document.querySelector('.main-content');
+    if (mainContent) {
+      mainContent.addEventListener('scroll', handleScroll);
+    }
+    return () => mainContent?.removeEventListener('scroll', handleScroll);
+  }, [isLoggedIn]);
 
   // Persistence: Save state when view or course changes
   useEffect(() => {
@@ -67,7 +86,7 @@ function App() {
 
   const checkSession = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/my/index.php`);
+      const res = await axios.get(`${API_BASE}/my/index.php`, { timeout: 10000 });
       const url = res.request.responseURL || '';
 
       if (!url.includes('/login/index.php')) {
@@ -76,18 +95,14 @@ function App() {
         const doc = parser.parseFromString(res.data, 'text/html');
 
         extractSessionInfo(doc);
-        fetchUserProfile(doc);
+        await fetchUserProfile(doc);
         const coursesFound = await parseCoursesFromDoc(doc);
 
         // Restore Session State
         const lastView = localStorage.getItem('lastView');
         const lastCourseId = localStorage.getItem('lastCourseId');
 
-        if (lastView === 'upload') {
-          // Restore Private Files View
-          await fetchPrivateFiles();
-        } else if (lastView === 'course' && lastCourseId && coursesFound.length > 0) {
-          // Restore Course View
+        if (lastView === 'course' && lastCourseId && coursesFound.length > 0) {
           const savedCourse = coursesFound.find(c => c.id === lastCourseId);
           if (savedCourse) {
             await fetchMaterials(savedCourse);
@@ -98,12 +113,10 @@ function App() {
           setView('dashboard');
         }
       } else {
-        // Not logged in
         setIsLoggedIn(false);
       }
     } catch (e) {
       console.log("Session check failed", e);
-      // On reload, if we can't reach the server, just show login screen instead of blocking offline error
       setIsLoggedIn(false);
     } finally {
       setSessionChecking(false);
@@ -136,42 +149,52 @@ function App() {
         return url;
       };
 
-      const userNavImg = doc.querySelector('.usermenu .userpicture, .usermenu .userpicture, .userpicture');
+      // Image extraction
+      const userNavImg = doc.querySelector('.usermenu .userpicture, .userpicture');
       if (userNavImg) {
         imageUrl = processUrl(userNavImg.getAttribute('src'));
       }
 
-      const profileLink = doc.querySelector('a[href*="/user/profile.php"]');
+      // Enhanced name extraction from current page
+      const nameSelectors = [
+        '.usermenu .userbutton .usertext',
+        '.userfullname',
+        '.contentnode',
+        '.user-profile-description',
+        '.user-profile-name',
+        '.usertext'
+      ];
 
-      if (profileLink) {
-        let url = profileLink.getAttribute('href');
-        url = processUrl(url);
-
-        const res = await axios.get(url);
-        const userDoc = new DOMParser().parseFromString(res.data, 'text/html');
-
-        const nameEl = userDoc.querySelector('.page-header-headings h1, .page-header h1, h1.h2');
-        if (nameEl) {
-          fullname = nameEl.textContent.trim();
-        }
-
-        const profileImg = userDoc.querySelector('.userpicture');
-        if (profileImg) {
-          imageUrl = processUrl(profileImg.getAttribute('src'));
-        }
-
-        extractSessionInfo(userDoc);
-      } else {
-        const userMenu = doc.querySelector('.usertext, .userbutton, .user-profile-name, .dropdown-toggle .userpicture');
-        if (userMenu && !fullname) {
-          fullname = userMenu.textContent.trim();
+      for (const selector of nameSelectors) {
+        const el = doc.querySelector(selector);
+        if (el && el.textContent.trim()) {
+          const text = el.textContent.trim();
+          if (text && text !== username && text !== 'Student') {
+            fullname = text;
+            break;
+          }
         }
       }
 
-      setUserData({ username: fullname, imageUrl });
+      // Deep extraction if profile link exists and we still have a placeholder
+      const profileLink = doc.querySelector('a[href*="/user/profile.php"]');
+      if (profileLink && (fullname === 'Student' || fullname === username)) {
+        let url = profileLink.getAttribute('href');
+        url = processUrl(url);
+        try {
+          const res = await axios.get(url, { timeout: 5000 });
+          const userDoc = new DOMParser().parseFromString(res.data, 'text/html');
+          const nameEl = userDoc.querySelector('.page-header-headings h1, .page-header h1, h1.h2, .contentnode, .userfullname');
+          if (nameEl && nameEl.textContent.trim()) {
+            fullname = nameEl.textContent.trim();
+          }
+          const profileImg = userDoc.querySelector('.userpicture');
+          if (profileImg) imageUrl = processUrl(profileImg.getAttribute('src'));
+        } catch (e) { console.log("Profile deep fetch failed"); }
+      }
 
+      setUserData({ username: fullname, imageUrl });
     } catch (e) {
-      console.error("Fetch profile failed", e);
       setUserData({ username: username || 'Student', imageUrl: null });
     }
   };
@@ -183,26 +206,18 @@ function App() {
 
     try {
       let loginPageRes = await axios.get(`${API_BASE}/login/index.php`);
-
       if (!loginPageRes.request.responseURL.includes('/login/index.php')) {
-        console.log("Active session detected during login. Logging out to force new authentication.");
-
         const parser = new DOMParser();
         const doc = parser.parseFromString(loginPageRes.data, 'text/html');
         const logoutLink = doc.querySelector('a[href*="login/logout.php"]');
-
         if (logoutLink) {
           let url = logoutLink.getAttribute('href');
-          if (url.startsWith('http')) {
-            url = url.replace(/https?:\/\/[^\/]+/, API_BASE);
-          } else if (url.startsWith('/')) {
-            url = `${API_BASE}${url}`;
-          }
+          if (url.startsWith('http')) url = url.replace(/https?:\/\/[^\/]+/, API_BASE);
+          else if (url.startsWith('/')) url = `${API_BASE}${url}`;
           await axios.get(url);
           loginPageRes = await axios.get(`${API_BASE}/login/index.php`);
         } else {
           setIsLoggedIn(true);
-          setSessionChecking(true);
           await checkSession();
           setLoading(false);
           return;
@@ -211,7 +226,6 @@ function App() {
 
       const parser = new DOMParser();
       const doc = parser.parseFromString(loginPageRes.data, 'text/html');
-
       const tokenInput = doc.querySelector('input[name="logintoken"]');
       const loginToken = tokenInput ? tokenInput.value : '';
 
@@ -228,7 +242,6 @@ function App() {
       });
 
       const postUrl = loginRes.request.responseURL || '';
-
       if (postUrl.includes('/login/index.php') || loginRes.data.includes('loginerrormessage')) {
         const failedDoc = new DOMParser().parseFromString(loginRes.data, 'text/html');
         const errorMsg = failedDoc.querySelector('.loginerrors .error, .notifyproblem, .alert-danger')?.textContent
@@ -239,16 +252,10 @@ function App() {
       }
 
       setIsLoggedIn(true);
-      setUserData({ username });
-      await fetchMyCourses(); // Default to courses
-
+      await fetchMyCourses();
     } catch (error) {
-      console.error("Login error", error);
-      if (error.code === 'ERR_NETWORK' || !error.response) {
-        setIsOffline(true);
-      } else {
-        setLoginError(`Login Error: ${error.message}`);
-      }
+      if (error.code === 'ERR_NETWORK' || !error.response) setIsOffline(true);
+      else setLoginError(`Login Error: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -256,26 +263,18 @@ function App() {
 
   const handleLogout = async () => {
     if (logoutUrl) {
-      try {
-        await axios.get(logoutUrl);
-      } catch (e) {
-        console.warn("Logout endpoint failed, but clearing local state", e);
-      }
+      try { await axios.get(logoutUrl); } catch (e) { }
     }
-
     setIsLoggedIn(false);
     setUserData(null);
     setCourses([]);
     setSelectedCourse(null);
     setLogoutUrl(null);
     setMaterials([]);
-    setPrivateFiles([]);
     setUsername('');
     setPassword('');
     setView('dashboard');
     setMobileMenuOpen(false);
-
-    // Clear persistence
     localStorage.removeItem('lastView');
     localStorage.removeItem('lastCourseId');
   };
@@ -287,17 +286,12 @@ function App() {
       const response = await axios.get(`${API_BASE}/my/index.php`);
       const parser = new DOMParser();
       const doc = parser.parseFromString(response.data, 'text/html');
-
       extractSessionInfo(doc);
-      fetchUserProfile(doc);
-      const list = await parseCoursesFromDoc(doc);
-
+      await fetchUserProfile(doc);
+      await parseCoursesFromDoc(doc);
       setView('dashboard');
-      return list;
     } catch (error) {
-      console.error("Fetch courses error", error);
       setIsOffline(true);
-      return [];
     } finally {
       setLoading(false);
     }
@@ -306,75 +300,28 @@ function App() {
   const parseCoursesFromDoc = async (doc) => {
     const courseMap = new Map();
     const dashboardItems = doc.querySelectorAll('.dashboard-card, .course-summaryitem, .coursebox, .card');
-
     dashboardItems.forEach(item => {
       const anchor = item.querySelector('a[href*="/course/view.php"]');
       if (anchor) {
         const href = anchor.getAttribute('href');
         const match = href.match(/id=(\d+)/);
-        if (match) {
+        if (match && match[1] !== '1') {
           const id = match[1];
-          if (id !== '1') {
-            let name = '';
-            const titleEl = item.querySelector('.coursename, .fullname, h3, h4, h5');
-            name = titleEl ? titleEl.textContent.trim() : anchor.textContent.trim();
-            if (name.toLowerCase() === 'course') name = '';
-            if (name && !courseMap.has(id)) {
-              courseMap.set(id, { id, name, url: href });
-            }
-          }
+          const titleEl = item.querySelector('.coursename, .fullname, h3, h4, h5');
+          const name = titleEl ? titleEl.textContent.trim() : anchor.textContent.trim();
+          if (name && !courseMap.has(id)) courseMap.set(id, { id, name, url: href });
         }
       }
     });
 
     const navLinks = doc.querySelectorAll('.block_navigation .type_course a[href*="/course/view.php"]');
     navLinks.forEach(link => {
-      const href = link.getAttribute('href');
-      const match = href.match(/id=(\d+)/);
-      if (match) {
+      const match = link.getAttribute('href').match(/id=(\d+)/);
+      if (match && match[1] !== '1') {
         const id = match[1];
-        if (id !== '1' && !courseMap.has(id)) {
-          courseMap.set(id, {
-            id,
-            name: link.textContent.trim() || link.title,
-            url: href
-          });
-        }
+        if (!courseMap.has(id)) courseMap.set(id, { id, name: link.textContent.trim() || link.title, url: link.href });
       }
     });
-
-    const menuLinks = doc.querySelectorAll('.dropdown-menu a[href*="/course/view.php"], .nav-item .dropdown-menu a[href*="/course/view.php"]');
-    menuLinks.forEach(link => {
-      const href = link.getAttribute('href');
-      const match = href.match(/id=(\d+)/);
-      if (match) {
-        const id = match[1];
-        if (id !== '1' && !courseMap.has(id)) {
-          courseMap.set(id, {
-            id,
-            name: link.textContent.trim(),
-            url: href
-          });
-        }
-      }
-    });
-
-    if (courseMap.size === 0) {
-      const frontPageLinks = doc.querySelectorAll('.frontpage-course-list-enrolled .coursebox a[href*="/course/view.php"]');
-      frontPageLinks.forEach(link => {
-        const href = link.getAttribute('href');
-        const match = href.match(/id=(\d+)/);
-        if (match) {
-          const id = match[1];
-          const container = link.closest('.coursebox');
-          const titleEl = container?.querySelector('h3, .coursename');
-          const name = titleEl ? titleEl.textContent.trim() : link.textContent.trim();
-          if (id !== '1' && !courseMap.has(id)) {
-            courseMap.set(id, { id, name, url: href });
-          }
-        }
-      });
-    }
 
     const list = Array.from(courseMap.values());
     setCourses(list);
@@ -383,11 +330,7 @@ function App() {
 
   const rewriteUrl = (url) => {
     if (!url) return '';
-    if (url.includes('20.0.121.215')) {
-      return url.replace('http://20.0.121.215', API_BASE)
-        .replace('https://20.0.121.215', API_BASE);
-    }
-    return url;
+    return url.replace(/https?:\/\/20\.0\.121\.215/g, API_BASE);
   };
 
   const fetchMaterials = async (course) => {
@@ -402,92 +345,41 @@ function App() {
       const response = await axios.get(`${API_BASE}/course/view.php?id=${course.id}`);
       const parser = new DOMParser();
       const doc = parser.parseFromString(response.data, 'text/html');
-
       const activityNodes = doc.querySelectorAll('.activity');
       let mats = Array.from(activityNodes).map(node => {
         const anchor = node.querySelector('a');
         if (!anchor) return null;
-
         const instanceName = node.querySelector('.instancename, .activityname');
         const text = instanceName ? instanceName.childNodes[0].textContent.trim() : anchor.textContent.trim();
         const href = rewriteUrl(anchor.getAttribute('href'));
-
         let type = 'file';
-        const classes = node.className;
-        if (classes.includes('folder')) type = 'folder';
-        else if (classes.includes('url')) type = 'url';
-        else if (classes.includes('forum')) type = 'forum';
-        else if (classes.includes('assign')) type = 'assignment';
-        else if (classes.includes('resource')) type = 'file';
-        else if (href.includes('folder')) type = 'folder';
-        else if (href.includes('assign')) type = 'assignment';
-
+        if (node.className.includes('folder')) type = 'folder';
+        else if (node.className.includes('url')) type = 'url';
+        else if (node.className.includes('assign')) type = 'assignment';
+        const workKeywords = ['assignment', 'task', 'project', 'submission', 'homework', 'quiz', 'lab work'];
+        if (workKeywords.some(kw => text.toLowerCase().includes(kw))) type = 'assignment';
         if (text.includes('Announcements') || text.includes('Attendance')) return null;
-
         return { id: href, name: text, url: href, type };
       }).filter(Boolean);
 
       if (mats.length === 0) {
         const resourceLinks = doc.querySelectorAll('a[href*="/mod/"]');
-        const fallbackMats = Array.from(resourceLinks).map(link => {
+        mats = Array.from(resourceLinks).map(link => {
           const href = rewriteUrl(link.href);
           if (href.includes('forum') || href.includes('label')) return null;
-
           let type = 'file';
           if (href.includes('folder')) type = 'folder';
-          if (href.includes('assign')) type = 'assignment';
-          if (href.includes('url')) type = 'url';
-
-          return {
-            id: href,
-            name: link.textContent.trim(),
-            url: href,
-            type
-          };
-        }).filter(Boolean).filter(m => !m.name.includes('Announcements'));
-
-        const unique = new Map();
-        fallbackMats.forEach(m => unique.set(m.url, m));
-        mats = Array.from(unique.values());
+          else if (href.includes('assign')) type = 'assignment';
+          else if (href.includes('url')) type = 'url';
+          const name = link.textContent.trim();
+          const workKeywords = ['assignment', 'task', 'project', 'submission', 'homework', 'quiz', 'lab work'];
+          if (workKeywords.some(kw => name.toLowerCase().includes(kw))) type = 'assignment';
+          return { id: href, name, url: href, type };
+        }).filter(Boolean);
       }
-
       setMaterials(mats);
     } catch (error) {
-      console.error("Fetch materials error", error);
       setIsOffline(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchPrivateFiles = async () => {
-    setLoading(true);
-    setView('upload');
-    setSelectedCourse(null);
-    setPrivateFiles([]);
-    setMobileMenuOpen(false);
-
-    try {
-      const res = await axios.get(`${API_BASE}/user/files.php`);
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(res.data, 'text/html');
-
-      const fileNodes = doc.querySelectorAll('.fp-filename-icon a, .fp-filename a');
-      if (fileNodes.length > 0) {
-        const files = Array.from(fileNodes).map(link => ({
-          name: link.textContent.trim(),
-          url: rewriteUrl(link.href),
-          type: 'file'
-        }));
-        setPrivateFiles(files);
-      } else {
-        const downloadAll = doc.querySelector('form[action*="download_all"]');
-        if (downloadAll) {
-          setPrivateFiles([{ name: 'View & Manage Files in Moodle', url: `${API_BASE}/user/files.php`, type: 'folder' }]);
-        }
-      }
-    } catch (e) {
-      console.error("Fetch files error", e);
     } finally {
       setLoading(false);
     }
@@ -498,44 +390,22 @@ function App() {
     try {
       setFolderHistory([...folderHistory, { name: folder.name, materials }]);
       setMaterials([]);
-
       const response = await axios.get(folder.url);
       const parser = new DOMParser();
       const doc = parser.parseFromString(response.data, 'text/html');
       const regionMain = doc.querySelector('[role="main"], .region-main') || doc.body;
-
-      let links = Array.from(regionMain.querySelectorAll('.fp-filename-icon a, .fp-filename a'));
-
-      if (links.length === 0) {
-        links = Array.from(regionMain.querySelectorAll('.activityinstance a'));
-      }
-
-      if (links.length === 0) {
-        links = Array.from(regionMain.querySelectorAll('.generaltable a, .urlworkaround a'));
-      }
-
+      let links = Array.from(regionMain.querySelectorAll('.fp-filename-icon a, .fp-filename a, .activityinstance a'));
       const folderMats = links.map(link => {
         const href = rewriteUrl(link.href);
         let name = link.textContent.trim();
-        const fpName = link.querySelector('.fp-filename');
-        const instName = link.querySelector('.instancename');
-        if (fpName) name = fpName.textContent.trim();
-        else if (instName) name = instName.childNodes[0].textContent.trim();
-
         let type = 'file';
         if (href.includes('/mod/folder/')) type = 'folder';
         else if (href.includes('/mod/assign/')) type = 'assignment';
-        else if (href.includes('/mod/url/') && !href.includes('pluginfile')) type = 'url';
-        else if (href.includes('/mod/forum/')) type = 'forum';
-
         if (!name || name.includes('Download folder')) return null;
-
-        return { id: href, name: name, url: href, type: type };
+        return { id: href, name, url: href, type };
       }).filter(Boolean);
-
       setMaterials(folderMats);
     } catch (err) {
-      console.error("Folder open error", err);
       if (folderHistory.length > 0) {
         const prev = folderHistory[folderHistory.length - 1];
         setMaterials(prev.materials);
@@ -558,17 +428,11 @@ function App() {
       <div className="offline-container">
         <WifiOff className="offline-icon" />
         <h1 className="offline-title">Connection Lost</h1>
-        <p className="offline-text">
-          We couldn't reach the learning portal. The server might be offline or your connection is unstable.
-        </p>
-        <button className="btn" onClick={() => { setIsOffline(false); setLoginError(null); }}>
-          <RefreshCw size={20} /> Try Again
-        </button>
+        <button className="btn" onClick={() => { setIsOffline(false); setLoginError(null); }}><RefreshCw size={20} /> Try Again</button>
       </div>
     );
   }
 
-  // Checking Session State
   if (sessionChecking) {
     return (
       <div className="login-page-container">
@@ -580,71 +444,34 @@ function App() {
     );
   }
 
-  // Centered Login Page
   if (!isLoggedIn) {
     return (
       <div className="login-page-container">
         <div className="login-card">
-          <div className="login-logo">
-            <GraduationCap size={48} />
-            <h1 className="login-title">MITS Moodle Login</h1>
-          </div>
-
-          <form onSubmit={handleLogin} className="login-form" style={{ border: 'none', padding: 0, background: 'transparent', boxShadow: 'none' }}>
+          <div className="login-logo"><GraduationCap size={48} /><h1 className="login-title">MITS Moodle Login</h1></div>
+          <form onSubmit={handleLogin} className="login-form">
             {loginError && <div className="error-msg">{loginError}</div>}
-
-            <div className="form-group">
-              <label className="form-label">Username</label>
-              <input
-                type="text"
-                className="form-input"
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                placeholder="Enter ID/Username"
-                autoComplete="username"
-              />
-            </div>
-
+            <div className="form-group"><label className="form-label">Username</label><input type="text" className="form-input" value={username} onChange={e => setUsername(e.target.value)} placeholder="Enter ID" /></div>
             <div className="form-group">
               <label className="form-label">Password</label>
-              <div style={{ position: 'relative' }}>
+              <div className="password-container">
                 <input
                   type={showPassword ? "text" : "password"}
                   className="form-input"
-                  style={{ width: '100%', paddingRight: '40px' }}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   placeholder="Enter Password"
-                  autoComplete="current-password"
                 />
                 <button
                   type="button"
+                  className="password-toggle"
                   onClick={() => setShowPassword(!showPassword)}
-                  style={{
-                    position: 'absolute',
-                    right: '10px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: 'none',
-                    border: 'none',
-                    color: '#94a3b8',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center'
-                  }}
-                  title={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
             </div>
-
-            <div className="rememberpass mt-3" style={{ display: 'none' }}>
-            </div>
-
-            <button type="submit" className="btn btn-block" style={{ marginTop: '1.5rem' }} disabled={loading}>
-              {loading ? 'Logging in...' : 'Log In'}
-            </button>
+            <button type="submit" className="btn btn-block" disabled={loading}>{loading ? 'Logging in...' : 'Log In'}</button>
           </form>
         </div>
       </div>
@@ -653,178 +480,60 @@ function App() {
 
   return (
     <div className="app-container">
-      {/* Mobile Overlay */}
-      <div
-        className={`sidebar-overlay ${mobileMenuOpen ? 'active' : ''}`}
-        onClick={() => setMobileMenuOpen(false)}
-      ></div>
-
-      {/* Sidebar */}
+      <div className={`sidebar-overlay ${mobileMenuOpen ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}></div>
       <div className={`sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}>
-        <div className="sidebar-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <GraduationCap size={28} />
-            <span>MITS Moodle</span>
-          </div>
-          {/* Mobile Close Button */}
-          <button
-            className="mobile-nav-toggle"
-            style={{ margin: 0, padding: 0 }}
-            onClick={() => setMobileMenuOpen(false)}
-          >
-            <X size={24} color="#94a3b8" />
-          </button>
-        </div>
-
+        <div className="sidebar-header"><div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><GraduationCap size={28} /><span>MITS Moodle</span></div><button className="mobile-nav-toggle" onClick={() => setMobileMenuOpen(false)}><X size={24} color="#94a3b8" /></button></div>
         <div className="course-scroll-area">
-          <div className="section-title" style={{ marginTop: 0 }}>
-            My Enrolled Courses
-          </div>
-
-          {loading && courses.length === 0 && <div style={{ textAlign: 'center', color: '#94a3b8', padding: '1rem' }}>Loading...</div>}
-
-          {courses.length === 0 && !loading && (
-            <div style={{ color: '#64748b', fontSize: '0.9rem', padding: '0.5rem' }}>No courses found.</div>
-          )}
-
-          <div className="course-list">
-            {courses.map(course => (
-              <div
-                key={course.id}
-                className={`sidebar-item ${selectedCourse?.id === course.id ? 'active' : ''}`}
-                onClick={() => fetchMaterials(course)}
-              >
-                <Book size={18} />
-                <span>{course.name}</span>
-              </div>
-            ))}
-          </div>
-
-
-        </div>
-
-        {/* User Profile / Logout */}
-        <div className="user-profile">
-          <div className="user-info">
-            {userData?.imageUrl && <img src={userData.imageUrl} alt="Profile" className="user-avatar" />}
-            <span>{userData?.username}</span>
-          </div>
-          <button onClick={handleLogout} className="logout-btn">
-            <LogOut size={16} /> Log out
-          </button>
+          <div className="section-title">My Enrolled Courses</div>
+          <div className="course-list">{courses.map(course => (<div key={course.id} className={`sidebar-item ${selectedCourse?.id === course.id ? 'active' : ''}`} onClick={() => fetchMaterials(course)}><Book size={18} /><span>{course.name}</span></div>))}</div>
         </div>
       </div>
-
-      {/* Main Content */}
-      <div className="main-content">
-        {/* Mobile Header Toggle */}
+      <div className="main-content" onClick={() => profileOpen && setProfileOpen(false)}>
+        <div className="top-nav-profile">
+          <button className="profile-trigger" onClick={(e) => { e.stopPropagation(); setProfileOpen(!profileOpen); }}>{userData?.imageUrl ? <img src={userData.imageUrl} alt="P" /> : <User size={24} />}</button>
+          {profileOpen && (
+            <div className="profile-dropdown" onClick={(e) => e.stopPropagation()}>
+              <div className="dropdown-user-info"><div className="dropdown-user-name">{userData?.username || 'Student'}</div></div>
+              <div className="dropdown-menu-item" onClick={() => window.open(`${API_BASE}/user/profile.php`, '_blank')}><Edit size={16} /> Edit Profile</div>
+              <div className="dropdown-menu-item logout" onClick={handleLogout}><LogOut size={16} /> Log Out</div>
+            </div>
+          )}
+        </div>
         <div className="mobile-header-row">
           <button className="mobile-nav-toggle" onClick={() => setMobileMenuOpen(true)}>
             <Menu size={24} />
           </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '0.5rem' }}>
+            <GraduationCap size={24} color="var(--accent)" />
+            <span style={{ fontWeight: 700, fontSize: '1.1rem' }}>MITS Moodle</span>
+          </div>
         </div>
-
-        {view === 'upload' ? (
-          <div className="content-pad">
-            <h1 className="content-title">Private Files</h1>
-            <p className="content-subtitle">Upload and manage your private files.</p>
-
-            <div className="upload-section" style={{ marginTop: '2rem', border: '2px dashed #e2e8f0', borderRadius: '12px', padding: '3rem', textAlign: 'center', backgroundColor: '#f8fafc' }}>
-              <UploadCloud size={48} color="#94a3b8" style={{ marginBottom: '1rem' }} />
-              <h3 style={{ marginBottom: '0.5rem', color: '#475569' }}>Upload Files</h3>
-              <p style={{ color: '#64748b', marginBottom: '1.5rem', fontSize: '0.9rem' }}>Drag and drop files here, or click to upload</p>
-              <label className="btn" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                <input type="file" style={{ display: 'none' }} />
-                <span>Choose File (Simulated)</span>
-              </label>
-              <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '1rem' }}>* File upload logic requires complex Moodle API integration. This is a UI placeholder.</p>
-            </div>
-
-            <div style={{ marginTop: '2rem' }}>
-              <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Your Files</h3>
-              {loading ? (
-                <div>Loading files...</div>
-              ) : privateFiles.length > 0 ? (
-                <div className="resource-list">
-                  {privateFiles.map((file, idx) => (
-                    <div key={idx} className="resource-item">
-                      <div className="resource-info">
-                        <div className="card-icon"><File /></div>
-                        <div>
-                          <div style={{ fontWeight: 600 }}>{file.name}</div>
-                          <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Private File</div>
-                        </div>
-                      </div>
-                      <a href={file.url} target="_blank" rel="noopener noreferrer" className="btn">
-                        <Download size={16} /> Download
-                      </a>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ color: '#64748b', fontStyle: 'italic' }}>No accessible private files found via simple scrape.</div>
-              )}
-            </div>
-          </div>
-        ) : !selectedCourse ? (
-          <div className="empty-state">
-            <Layout size={64} className="empty-icon" />
-            <h2>Select a course to view materials</h2>
-          </div>
+        {!selectedCourse ? (
+          <div className="empty-state"><Layout size={64} className="empty-icon" /><h2>Select a course to view materials</h2></div>
         ) : (
           <>
             <div className="content-header">
-              {folderHistory.length > 0 && (
-                <button onClick={handleBack} className="btn-outline" style={{ marginBottom: '0.5rem', paddingLeft: 0 }}>
-                  <ArrowLeft size={18} /> Back
-                </button>
-              )}
-              <h1 className="content-title">
-                {folderHistory.length > 0 ? folderHistory[folderHistory.length - 1].name : selectedCourse.name}
-              </h1>
-              <p className="content-subtitle">
-                {folderHistory.length > 0 ? 'Folder Contents' : 'Course Materials & Downloads'}
-              </p>
+              {folderHistory.length > 0 && (<button onClick={handleBack} className="btn-outline"><ArrowLeft size={18} /> Back</button>)}
+              <h1 className="content-title">{folderHistory.length > 0 ? folderHistory[folderHistory.length - 1].name : selectedCourse.name}</h1>
             </div>
-
-            {loading ? (
-              <div style={{ color: '#94a3b8' }}>Loading materials...</div>
-            ) : materials.length > 0 ? (
+            {loading ? (<div style={{ color: '#94a3b8' }}>Loading materials...</div>) : materials.length > 0 ? (
               <div className="resource-list">
                 {materials.map((mat, idx) => (
                   <div key={idx} className="resource-item">
-                    <div className="resource-info">
-                      <div className="card-icon">
-                        {mat.type === 'folder' ? <Folder /> :
-                          mat.type === 'url' ? <Book /> :
-                            mat.type === 'assignment' ? <FileText /> : <FileText />}
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 600 }}>{mat.name}</div>
-                        <div style={{ fontSize: '0.8rem', color: '#64748b', textTransform: 'capitalize' }}>{mat.type} Resource</div>
-                      </div>
-                    </div>
-                    {/* Render different actions based on type */}
-                    {mat.type === 'folder' ? (
-                      <button onClick={() => handleFolderClick(mat)} className="btn">
-                        <ChevronRight size={16} /> Open
-                      </button>
-                    ) : (
+                    <div className="resource-info"><div className="card-icon">{mat.type === 'folder' ? <Folder /> : mat.type === 'url' ? <Book /> : <FileText />}</div><div><div style={{ fontWeight: 600 }}>{mat.name}</div><div style={{ fontSize: '0.8rem', color: '#64748b' }}>{mat.type} Resource</div></div></div>
+                    {mat.type === 'folder' ? (<button onClick={() => handleFolderClick(mat)} className="btn"><ChevronRight size={16} /> Open</button>) : (
                       <a href={mat.url} target="_blank" rel="noopener noreferrer" className="btn">
-                        {mat.type === 'url' ? <ChevronRight size={16} /> : <Download size={16} />}
-                        {mat.type === 'url' ? 'Open' : 'Download'}
+                        {mat.type === 'url' ? <ChevronRight size={16} /> : (mat.type === 'assignment' ? <UploadCloud size={16} /> : <Download size={16} />)}
+                        {mat.type === 'url' ? 'Open' : (mat.type === 'assignment' ? 'Upload' : 'Download')}
                       </a>
                     )}
                   </div>
                 ))}
               </div>
-            ) : (
-              <div className="empty-state">
-                <p>No materials found.</p>
-              </div>
-            )}
+            ) : (<div className="empty-state"><p>No materials found.</p></div>)}
           </>
         )}
+        <button className={`back-to-top ${showScrollTop ? 'visible' : ''}`} onClick={() => { document.querySelector('.main-content')?.scrollTo({ top: 0, behavior: 'smooth' }); }}><ChevronUp size={24} /></button>
       </div>
     </div>
   );

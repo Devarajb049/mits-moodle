@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --bg-color: #0f172a;
   --sidebar-bg: #1e293b;
   --text-primary: #f8fafc;
@@ -205,17 +205,19 @@ body {
 .logout-btn {
   background: none;
   border: none;
-  color: var(--text-secondary);
+  color: var(--error);
   font-size: 0.8rem;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0;
+  transition: opacity 0.2s;
 }
 
 .logout-btn:hover {
-  color: var(--text-primary);
+  opacity: 0.8;
+  color: #ff6b6b;
 }
 
 .category-list,
@@ -311,14 +313,141 @@ body {
   text-align: center;
 }
 
+.password-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-container .form-input {
+  width: 100%;
+  padding-right: 3rem;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 0.75rem;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  transition: color 0.2s;
+}
+
+.password-toggle:hover {
+  color: var(--accent);
+}
+
 /* Main Content */
 .main-content {
   flex: 1;
-  padding: 2rem;
-  overflow-y: auto;
-  position: relative;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  position: relative;
+  padding: 2rem;
+}
+
+/* Header Profile Section */
+.top-nav-profile {
+  position: absolute;
+  top: 1.5rem;
+  right: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  z-index: 20;
+}
+
+.profile-trigger {
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
+  background-color: var(--card-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+
+.profile-trigger:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 15px rgba(56, 189, 248, 0.3);
+}
+
+.profile-trigger img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.75rem;
+  width: 240px;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+  padding: 1rem;
+  animation: fadeIn 0.2s ease-out;
+  backdrop-filter: blur(12px);
+  background-color: rgba(30, 41, 59, 0.95);
+}
+
+.dropdown-user-info {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.dropdown-user-name {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.dropdown-user-role {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.dropdown-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.9rem;
+}
+
+.dropdown-menu-item:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.dropdown-menu-item.logout {
+  color: var(--error);
+}
+
+.dropdown-menu-item.logout:hover {
+  background-color: rgba(239, 68, 68, 0.1);
 }
 
 .content-header {
@@ -432,6 +561,41 @@ body {
   margin-bottom: 2rem;
 }
 
+/* Back to Top Button */
+.back-to-top {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  width: 50px;
+  height: 50px;
+  background-color: var(--accent);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+  border: none;
+  z-index: 100;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0;
+  transform: translateY(20px);
+  pointer-events: none;
+}
+
+.back-to-top.visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.back-to-top:hover {
+  transform: translateY(-5px);
+  background-color: var(--accent-hover);
+  box-shadow: 0 6px 20px rgba(56, 189, 248, 0.4);
+}
+
 /* Downloads List */
 .resource-list {
   display: flex;
@@ -485,9 +649,12 @@ body {
   border: none;
   color: var(--text-primary);
   cursor: pointer;
-  font-size: 1.2rem;
   padding: 0.5rem;
-  margin-right: 0.5rem;
+  transition: color 0.2s;
+}
+
+.mobile-header-row {
+  display: none;
 }
 
 .sidebar-overlay {
@@ -526,14 +693,16 @@ body {
     opacity: 1;
   }
 
+  .main-content {
+    padding: 1rem;
+    padding-top: 5.5rem;
+    /* Ensure space for fixed header */
+  }
+
   .mobile-nav-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-  }
-
-  .main-content {
-    padding: 1rem;
   }
 
   .resource-item {
@@ -553,23 +722,73 @@ body {
     width: 100%;
   }
 
-  .content-title {
-    font-size: 1.5rem;
-  }
-
   .content-header {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     padding-bottom: 1rem;
     margin-bottom: 1.5rem;
+    margin-top: 0.5rem;
   }
 
-  /* Make generic header row for mobile toggle */
+  .content-title {
+    font-size: 1.5rem;
+    line-height: 1.2;
+    overflow-wrap: break-word;
+    word-break: break-all;
+    /* Ensure long course names don't break layout */
+    width: 100%;
+  }
+
+  /* Fixed Mobile Header */
   .mobile-header-row {
     display: flex;
     align-items: center;
     width: 100%;
-    margin-bottom: 1rem;
+    margin-bottom: 0;
+    padding: 0.75rem 1rem;
+    background-color: rgba(30, 41, 59, 0.8);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    gap: 0.5rem;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 30;
+    border-radius: 0;
+  }
+
+  .top-nav-profile {
+    top: 0.75rem;
+    right: 1.25rem;
+    z-index: 40;
+    /* Above fixed header */
+  }
+
+  .profile-trigger {
+    width: 38px;
+    height: 38px;
+  }
+
+  /* Back to Top Button */
+  .back-to-top {
+    right: 1.5rem;
+    bottom: 1.5rem;
+    width: 45px;
+    height: 45px;
+  }
+
+  /* Profile Dropdown RWD */
+  .profile-dropdown {
+    width: 200px;
+    right: 0;
+    margin-top: 0.5rem;
+  }
+
+  /* Login Form RWD */
+  .login-card {
+    padding: 1.5rem;
+    max-width: 90%;
   }
 }

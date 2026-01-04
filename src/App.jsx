@@ -437,7 +437,7 @@ function App() {
     return (
       <div className="login-page-container">
         <div style={{ color: '#94a3b8', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <RefreshCw size={32} className="offline-icon" style={{ color: '#38bdf8' }} />
+          <RefreshCw size={32} className="spinner" style={{ marginBottom: '1rem' }} />
           <p>Restoring session...</p>
         </div>
       </div>
@@ -471,7 +471,9 @@ function App() {
                 </button>
               </div>
             </div>
-            <button type="submit" className="btn btn-block" disabled={loading}>{loading ? 'Logging in...' : 'Log In'}</button>
+            <button type="submit" className="btn btn-block" disabled={loading}>
+              {loading ? <RefreshCw className="spinner" size={18} style={{ color: 'white' }} /> : 'Log In'}
+            </button>
           </form>
         </div>
       </div>
@@ -516,7 +518,12 @@ function App() {
               {folderHistory.length > 0 && (<button onClick={handleBack} className="btn-outline"><ArrowLeft size={18} /> Back</button>)}
               <h1 className="content-title">{folderHistory.length > 0 ? folderHistory[folderHistory.length - 1].name : selectedCourse.name}</h1>
             </div>
-            {loading ? (<div style={{ color: '#94a3b8' }}>Loading materials...</div>) : materials.length > 0 ? (
+            {loading ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#94a3b8', marginTop: '2rem' }}>
+                <RefreshCw className="spinner" size={20} />
+                <span>Loading materials...</span>
+              </div>
+            ) : materials.length > 0 ? (
               <div className="resource-list">
                 {materials.map((mat, idx) => (
                   <div key={idx} className="resource-item">

@@ -81,6 +81,25 @@ body {
   }
 }
 
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+.spinner {
+  color: var(--accent);
+  animation: spin 1s linear infinite;
+}
+
 /* Layout */
 .app-container {
   display: flex;

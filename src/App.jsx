@@ -86,7 +86,7 @@ function App() {
 
   const checkSession = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/my/index.php`, { timeout: 10000 });
+      const res = await axios.get(`${API_BASE}/my/index.php`, { timeout: 60000 });
       const url = res.request.responseURL || '';
 
       if (!url.includes('/login/index.php')) {
@@ -182,7 +182,7 @@ function App() {
         let url = profileLink.getAttribute('href');
         url = processUrl(url);
         try {
-          const res = await axios.get(url, { timeout: 5000 });
+          const res = await axios.get(url, { timeout: 30000 });
           const userDoc = new DOMParser().parseFromString(res.data, 'text/html');
           const nameEl = userDoc.querySelector('.page-header-headings h1, .page-header h1, h1.h2, .contentnode, .userfullname');
           if (nameEl && nameEl.textContent.trim()) {

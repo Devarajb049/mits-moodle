@@ -13,17 +13,22 @@ const PORT = process.env.PORT || 3000;
 app.use('/moodle', createProxyMiddleware({
   target: 'http://20.0.121.215',
   changeOrigin: true,
+  proxyTimeout: 120000, // 2 minutes
+  timeout: 120000,
   pathRewrite: {
-    '^/moodle': '', // remove /moodle from the request
+    '^/moodle': '',
   },
   onProxyRes: (proxyRes, req, res) => {
-    // Rewrite Location header if it's a redirect to the absolute original URL
     if (proxyRes.headers['location']) {
       proxyRes.headers['location'] = proxyRes.headers['location'].replace('http://20.0.121.215', '/moodle');
     }
   },
-  cookieDomainRewrite: "", // Rewrite cookie domains to current host
-  secure: false, // Set to true if target is https
+  onError: (err, req, res) => {
+    console.error('Proxy Error:', err);
+    res.status(504).json({ error: 'Moodle server timed out or is unreachable.' });
+  },
+  cookieDomainRewrite: "",
+  secure: false,
 }));
 
 // Serve static files from the Vite build directory

@@ -21,7 +21,9 @@ import {
   Menu,
   X,
   ChevronUp,
-  Edit
+  Edit,
+  Sun,
+  Moon
 } from 'lucide-react';
 
 const API_BASE = '/moodle';
@@ -53,10 +55,17 @@ function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
 
   useEffect(() => {
     checkSession();
   }, []);
+
+  useEffect(() => {
+    if (theme === 'light') document.body.classList.add('light-mode');
+    else document.body.classList.remove('light-mode');
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
   // Scroll Listener for Back to Top
   useEffect(() => {
@@ -299,6 +308,8 @@ function App() {
 
   const parseCoursesFromDoc = async (doc) => {
     const courseMap = new Map();
+
+    // 1. Primary extraction from obvious dashboard cards
     const dashboardItems = doc.querySelectorAll('.dashboard-card, .course-summaryitem, .coursebox, .card');
     dashboardItems.forEach(item => {
       const anchor = item.querySelector('a[href*="/course/view.php"]');
@@ -307,19 +318,41 @@ function App() {
         const match = href.match(/id=(\d+)/);
         if (match && match[1] !== '1') {
           const id = match[1];
-          const titleEl = item.querySelector('.coursename, .fullname, h3, h4, h5');
+          const titleEl = item.querySelector('.coursename, .fullname, .multiline, h3, h4, h5');
           const name = titleEl ? titleEl.textContent.trim() : anchor.textContent.trim();
-          if (name && !courseMap.has(id)) courseMap.set(id, { id, name, url: href });
+          if (name && name.toLowerCase() !== 'course' && name.toLowerCase() !== 'view' && !courseMap.has(id)) {
+            courseMap.set(id, { id, name, url: href });
+          }
         }
       }
     });
 
-    const navLinks = doc.querySelectorAll('.block_navigation .type_course a[href*="/course/view.php"]');
-    navLinks.forEach(link => {
-      const match = link.getAttribute('href').match(/id=(\d+)/);
+    // 2. Extremely aggressive extraction from EVERY link on the page
+    // This catches courses in top nav dropdowns, sidebars, and list groups
+    const allCourseLinks = doc.querySelectorAll('a[href*="/course/view.php"]');
+    allCourseLinks.forEach(link => {
+      const href = link.getAttribute('href');
+      const match = href.match(/id=(\d+)/);
       if (match && match[1] !== '1') {
         const id = match[1];
-        if (!courseMap.has(id)) courseMap.set(id, { id, name: link.textContent.trim() || link.title, url: link.href });
+
+        let name = link.textContent.trim();
+        if (!name && link.title) name = link.title.trim();
+        if (!name) {
+          const titleNode = link.querySelector('[title]');
+          if (titleNode) name = titleNode.getAttribute('title').trim();
+        }
+        if (!name) {
+          const mediaBody = link.querySelector('.media-body');
+          if (mediaBody) name = mediaBody.textContent.trim();
+        }
+
+        // Exclude generic/blank link texts
+        const lowerName = (name || '').toLowerCase();
+        if (name && lowerName !== 'course' && lowerName !== 'view' && lowerName !== 'view course' && !courseMap.has(id)) {
+          // We might get weird short names if icons have titles, but usually it works.
+          courseMap.set(id, { id, name, url: href });
+        }
       }
     });
 
@@ -330,7 +363,7 @@ function App() {
 
   const rewriteUrl = (url) => {
     if (!url) return '';
-    return url.replace(/https?:\/\/20\.0\.121\.215/g, API_BASE);
+    return url.replace(/https?:\/\/(20\.0\.121\.215|mitsmoodle\.mits\.ac\.in)/g, API_BASE);
   };
 
   const fetchMaterials = async (course) => {
@@ -448,7 +481,7 @@ function App() {
     return (
       <div className="login-page-container">
         <div className="login-card">
-          <div className="login-logo"><GraduationCap size={48} /><h1 className="login-title">MITS Moodle Login</h1></div>
+          <div className="login-logo"><GraduationCap size={48} /><h1 className="login-title">MITS Moodle</h1></div>
           <form onSubmit={handleLogin} className="login-form">
             {loginError && <div className="error-msg">{loginError}</div>}
             <div className="form-group"><label className="form-label">Username</label><input type="text" className="form-input" value={username} onChange={e => setUsername(e.target.value)} placeholder="Enter ID" /></div>
@@ -476,6 +509,9 @@ function App() {
             </button>
           </form>
         </div>
+        <div style={{ position: 'absolute', bottom: '2rem', textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: '500' }}>
+          Crafted by DEVA RAJ BHOJANAPU
+        </div>
       </div>
     );
   }
@@ -489,9 +525,15 @@ function App() {
           <div className="section-title">My Enrolled Courses</div>
           <div className="course-list">{courses.map(course => (<div key={course.id} className={`sidebar-item ${selectedCourse?.id === course.id ? 'active' : ''}`} onClick={() => fetchMaterials(course)}><Book size={18} /><span>{course.name}</span></div>))}</div>
         </div>
+        <div style={{ marginTop: 'auto', textAlign: 'center', paddingTop: '1rem', borderTop: '1px solid var(--border)', fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: '500' }}>
+          Crafted by DEVA RAJ BHOJANAPU
+        </div>
       </div>
       <div className="main-content" onClick={() => profileOpen && setProfileOpen(false)}>
-        <div className="top-nav-profile">
+        <div className="top-nav-profile" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <button className="btn-outline" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} title="Toggle Theme" style={{ padding: '0.5rem', borderRadius: '50%', border: '1px solid var(--border)' }}>
+            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
           <button className="profile-trigger" onClick={(e) => { e.stopPropagation(); setProfileOpen(!profileOpen); }}>{userData?.imageUrl ? <img src={userData.imageUrl} alt="P" /> : <User size={24} />}</button>
           {profileOpen && (
             <div className="profile-dropdown" onClick={(e) => e.stopPropagation()}>
@@ -511,7 +553,24 @@ function App() {
           </div>
         </div>
         {!selectedCourse ? (
-          <div className="empty-state"><Layout size={64} className="empty-icon" /><h2>Select a course to view materials</h2></div>
+          <div className="dashboard-view" style={{ flex: 1 }}>
+            <h1 className="content-title" style={{ marginBottom: '1.5rem' }}>My Enrolled Courses</h1>
+            <div className="course-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem', alignContent: 'start' }}>
+              {courses.map(course => (
+                <div key={course.id} className="resource-item" onClick={() => fetchMaterials(course)} style={{ cursor: 'pointer', flexDirection: 'column', alignItems: 'flex-start', padding: '1.5rem' }}>
+                  <div className="card-icon" style={{ marginBottom: '1rem' }}><Book size={24} /></div>
+                  <div style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '1rem', lineHeight: '1.4' }}>{course.name}</div>
+                  <div style={{ color: 'var(--accent)', fontSize: '0.9rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: 'auto' }}>View Materials <ChevronRight size={16} /></div>
+                </div>
+              ))}
+              {courses.length === 0 && (
+                <div className="empty-state" style={{ gridColumn: '1 / -1', padding: '3rem 0' }}>
+                  <Book size={48} className="empty-icon" />
+                  <h3 style={{ marginTop: '1rem' }}>No enrolled courses found.</h3>
+                </div>
+              )}
+            </div>
+          </div>
         ) : (
           <>
             <div className="content-header">

@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 3000;
 
 // Proxy configuration for Moodle
 app.use('/moodle', createProxyMiddleware({
-  target: 'http://20.0.121.215',
+  target: 'https://mitsmoodle.mits.ac.in',
   changeOrigin: true,
   proxyTimeout: 120000, // 2 minutes
   timeout: 120000,
@@ -20,7 +20,7 @@ app.use('/moodle', createProxyMiddleware({
   },
   onProxyRes: (proxyRes, req, res) => {
     if (proxyRes.headers['location']) {
-      proxyRes.headers['location'] = proxyRes.headers['location'].replace('http://20.0.121.215', '/moodle');
+      proxyRes.headers['location'] = proxyRes.headers['location'].replace('https://mitsmoodle.mits.ac.in', '/moodle');
     }
   },
   onError: (err, req, res) => {

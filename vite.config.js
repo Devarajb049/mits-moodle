@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/moodle': {
-        target: 'http://20.0.121.215',
+        target: 'https://mitsmoodle.mits.ac.in',
         changeOrigin: true,
         secure: false,
         cookieDomainRewrite: "",
@@ -15,7 +15,7 @@ export default defineConfig({
           proxy.on('proxyRes', (proxyRes, req, res) => {
             // Rewrite Location header if it's a redirect to the absolute original URL
             if (proxyRes.headers['location']) {
-              proxyRes.headers['location'] = proxyRes.headers['location'].replace('http://20.0.121.215', '/moodle');
+              proxyRes.headers['location'] = proxyRes.headers['location'].replace('https://mitsmoodle.mits.ac.in', '/moodle');
             }
           });
         },

@@ -1,10 +1,19 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "functions": {
+    "api/**/*.js": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
     {
       "source": "/moodle/:path*",
       "destination": "/api/moodle/:path*"
+    },
+    {
+      "source": "/moodle",
+      "destination": "/api/moodle/"
     }
   ]
 }

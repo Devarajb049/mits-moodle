@@ -93,10 +93,25 @@ function App() {
     }
   }, [view, selectedCourse, isLoggedIn]);
 
+  // Helper to extract final URL from response (works with Vercel proxy)
+  const getFinalUrl = (res) => {
+    // First check the X-Final-URL header from our proxy
+    const headerUrl = res.headers?.['x-final-url'];
+    if (headerUrl) return headerUrl;
+    
+    // Check for URL embedded in HTML comment
+    const match = res.data?.match?.(/<!-- FINAL_URL:([^\s]+) -->/);
+    if (match) return match[1];
+    
+    // Fall back to responseURL (works with Express proxy)
+    return res.request?.responseURL || '';
+  };
+
   const checkSession = async () => {
     try {
       const res = await axios.get(`${API_BASE}/my/index.php`, { timeout: 60000 });
-      const url = res.request.responseURL || '';
+      const url = getFinalUrl(res);
+      console.log('[v0] Session check URL:', url);
 
       if (!url.includes('/login/index.php')) {
         setIsLoggedIn(true);
@@ -214,8 +229,12 @@ function App() {
     setLoginError(null);
 
     try {
+      console.log('[v0] Starting login process...');
       let loginPageRes = await axios.get(`${API_BASE}/login/index.php`);
-      if (!loginPageRes.request.responseURL.includes('/login/index.php')) {
+      const loginPageUrl = getFinalUrl(loginPageRes);
+      console.log('[v0] Login page URL:', loginPageUrl);
+      
+      if (!loginPageUrl.includes('/login/index.php')) {
         const parser = new DOMParser();
         const doc = parser.parseFromString(loginPageRes.data, 'text/html');
         const logoutLink = doc.querySelector('a[href*="login/logout.php"]');
@@ -237,6 +256,7 @@ function App() {
       const doc = parser.parseFromString(loginPageRes.data, 'text/html');
       const tokenInput = doc.querySelector('input[name="logintoken"]');
       const loginToken = tokenInput ? tokenInput.value : '';
+      console.log('[v0] Login token found:', !!loginToken);
 
       const formData = new URLSearchParams();
       formData.append('username', username);
@@ -245,12 +265,15 @@ function App() {
       formData.append('anchor', '');
       formData.append('rememberusername', '1');
 
+      console.log('[v0] Submitting login form...');
       const loginRes = await axios.post(`${API_BASE}/login/index.php`, formData, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         maxRedirects: 5
       });
 
-      const postUrl = loginRes.request.responseURL || '';
+      const postUrl = getFinalUrl(loginRes);
+      console.log('[v0] Post-login URL:', postUrl);
+      
       if (postUrl.includes('/login/index.php') || loginRes.data.includes('loginerrormessage')) {
         const failedDoc = new DOMParser().parseFromString(loginRes.data, 'text/html');
         const errorMsg = failedDoc.querySelector('.loginerrors .error, .notifyproblem, .alert-danger')?.textContent

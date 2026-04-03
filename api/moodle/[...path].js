@@ -4,30 +4,54 @@
 const MOODLE_BASE = 'https://mitsmoodle.mits.ac.in';
 
 export default async function handler(req, res) {
-  // Get the path from the URL
-  const pathSegments = req.url.replace(/^\/api\/moodle\/?/, '') || '';
-  const moodleUrl = `${MOODLE_BASE}/${pathSegments}`;
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Cookie, Authorization');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    return res.status(200).end();
+  }
 
-  console.log('[v0] Proxying request to:', moodleUrl);
-  console.log('[v0] Method:', req.method);
+  // Get the path from the URL
+  let pathSegments = req.url.replace(/^\/api\/moodle\/?/, '').replace(/^\?/, '') || '';
+  
+  // Handle query string
+  const urlParts = pathSegments.split('?');
+  const path = urlParts[0];
+  const queryString = urlParts[1] || '';
+  
+  const moodleUrl = queryString 
+    ? `${MOODLE_BASE}/${path}?${queryString}`
+    : `${MOODLE_BASE}/${path}`;
 
   try {
-    // Prepare headers to forward
+    // Use realistic browser headers to avoid 403
     const headers = {
-      'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': req.headers['accept'] || 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': req.headers['accept-language'] || 'en-US,en;q=0.5',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'same-origin',
+      'Sec-Fetch-User': '?1',
+      'Cache-Control': 'max-age=0',
+      'Referer': `${MOODLE_BASE}/`,
+      'Origin': MOODLE_BASE,
     };
 
-    // Forward cookies
+    // Forward cookies from client
     if (req.headers.cookie) {
       headers['Cookie'] = req.headers.cookie;
-      console.log('[v0] Forwarding cookies');
     }
 
     // Handle content type for POST requests
     if (req.method === 'POST') {
       headers['Content-Type'] = req.headers['content-type'] || 'application/x-www-form-urlencoded';
+      headers['Sec-Fetch-Site'] = 'same-origin';
     }
 
     // Prepare fetch options
@@ -39,7 +63,6 @@ export default async function handler(req, res) {
 
     // Handle request body for POST
     if (req.method === 'POST' && req.body) {
-      // Body is already parsed by Vercel, need to re-encode it
       if (typeof req.body === 'object') {
         const params = new URLSearchParams();
         for (const [key, value] of Object.entries(req.body)) {
@@ -49,16 +72,28 @@ export default async function handler(req, res) {
       } else {
         fetchOptions.body = req.body;
       }
-      console.log('[v0] POST body prepared');
     }
 
     // Make the request to Moodle
     let response = await fetch(moodleUrl, fetchOptions);
     let finalUrl = moodleUrl;
+    let allCookies = [];
+
+    // Collect Set-Cookie headers
+    const collectCookies = (resp) => {
+      const setCookieHeader = resp.headers.get('set-cookie');
+      if (setCookieHeader) {
+        // Split multiple cookies properly
+        const cookies = setCookieHeader.split(/,(?=[^;]+=[^;]+)/);
+        allCookies.push(...cookies);
+      }
+    };
+
+    collectCookies(response);
 
     // Follow redirects manually to track the final URL
     let redirectCount = 0;
-    while (response.status >= 300 && response.status < 400 && redirectCount < 10) {
+    while ((response.status === 301 || response.status === 302 || response.status === 303 || response.status === 307 || response.status === 308) && redirectCount < 10) {
       let location = response.headers.get('location');
       if (!location) break;
 
@@ -69,14 +104,26 @@ export default async function handler(req, res) {
         location = new URL(location, finalUrl).href;
       }
 
-      console.log('[v0] Following redirect to:', location);
       finalUrl = location;
 
-      // Forward cookies from redirect response
-      const setCookies = response.headers.get('set-cookie');
-      if (setCookies) {
-        headers['Cookie'] = (headers['Cookie'] ? headers['Cookie'] + '; ' : '') + 
-          setCookies.split(',').map(c => c.split(';')[0]).join('; ');
+      // Update cookies from redirect for next request
+      const setCookieHeader = response.headers.get('set-cookie');
+      if (setCookieHeader) {
+        const newCookies = setCookieHeader.split(/,(?=[^;]+=[^;]+)/).map(c => c.split(';')[0].trim());
+        const existingCookies = headers['Cookie'] ? headers['Cookie'].split('; ') : [];
+        
+        // Merge cookies
+        const cookieMap = {};
+        existingCookies.forEach(c => {
+          const [name, ...rest] = c.split('=');
+          if (name) cookieMap[name.trim()] = rest.join('=');
+        });
+        newCookies.forEach(c => {
+          const [name, ...rest] = c.split('=');
+          if (name) cookieMap[name.trim()] = rest.join('=');
+        });
+        
+        headers['Cookie'] = Object.entries(cookieMap).map(([k, v]) => `${k}=${v}`).join('; ');
       }
 
       response = await fetch(location, {
@@ -84,22 +131,21 @@ export default async function handler(req, res) {
         headers,
         redirect: 'manual',
       });
+      
+      collectCookies(response);
       redirectCount++;
     }
-
-    console.log('[v0] Final URL:', finalUrl);
-    console.log('[v0] Response status:', response.status);
 
     // Get the response body
     const contentType = response.headers.get('content-type') || 'text/html';
     let body;
 
-    if (contentType.includes('text') || contentType.includes('html') || contentType.includes('json')) {
+    if (contentType.includes('text') || contentType.includes('html') || contentType.includes('json') || contentType.includes('javascript')) {
       body = await response.text();
       
       // Rewrite URLs in HTML responses to go through our proxy
       if (contentType.includes('html')) {
-        // Inject the final URL as a comment at the top so axios can read it
+        // Inject the final URL as a comment at the top so the client can read it
         const urlComment = `<!-- FINAL_URL:${finalUrl.replace(MOODLE_BASE, '/moodle')} -->`;
         body = urlComment + body;
         
@@ -113,18 +159,15 @@ export default async function handler(req, res) {
     }
 
     // Forward Set-Cookie headers
-    const setCookie = response.headers.get('set-cookie');
-    if (setCookie) {
-      // Parse and modify cookies for our domain
-      const cookies = setCookie.split(/,(?=\s*\w+=)/).map(cookie => {
-        // Remove domain and secure flags for local development compatibility
+    if (allCookies.length > 0) {
+      const modifiedCookies = allCookies.map(cookie => {
         return cookie
           .replace(/;\s*domain=[^;]*/gi, '')
           .replace(/;\s*secure/gi, '')
-          .replace(/;\s*samesite=none/gi, '; SameSite=Lax');
+          .replace(/;\s*samesite=none/gi, '; SameSite=Lax')
+          .replace(/;\s*path=\/(?![\w])/gi, '; Path=/');
       });
-      res.setHeader('Set-Cookie', cookies);
-      console.log('[v0] Set-Cookie headers forwarded');
+      res.setHeader('Set-Cookie', modifiedCookies);
     }
 
     // Set response headers
@@ -132,14 +175,14 @@ export default async function handler(req, res) {
     res.setHeader('X-Final-URL', finalUrl.replace(MOODLE_BASE, '/moodle'));
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Expose-Headers', 'X-Final-URL');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Final-URL, Set-Cookie');
 
     // Send response
     res.status(response.status);
     res.send(body);
 
   } catch (error) {
-    console.error('[v0] Proxy error:', error);
+    console.error('Proxy error:', error);
     res.status(500).json({ 
       error: 'Proxy error', 
       message: error.message,

@@ -4,9 +4,18 @@
 const MOODLE_BASE = 'https://mitsmoodle.mits.ac.in';
 
 export default async function handler(req, res) {
-  // Get the path from the URL
-  const pathSegments = req.url.replace(/^\/api\/moodle\/?/, '') || '';
-  const moodleUrl = `${MOODLE_BASE}/${pathSegments}`;
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Cookie');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    return res.status(200).end();
+  }
+
+  // Get the path + query string from the URL
+  const fullPath = req.url.replace(/^\/api\/moodle\/?/, '') || '';
+  const moodleUrl = `${MOODLE_BASE}/${fullPath}`;
 
   console.log('[v0] Proxying request to:', moodleUrl);
   console.log('[v0] Method:', req.method);

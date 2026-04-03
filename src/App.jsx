@@ -28,6 +28,9 @@ import {
 
 const API_BASE = '/moodle';
 
+// Configure axios defaults for cookie handling
+axios.defaults.withCredentials = true;
+
 function App() {
   const [isOffline, setIsOffline] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -266,9 +269,10 @@ function App() {
       formData.append('rememberusername', '1');
 
       console.log('[v0] Submitting login form...');
-      const loginRes = await axios.post(`${API_BASE}/login/index.php`, formData, {
+      const loginRes = await axios.post(`${API_BASE}/login/index.php`, formData.toString(), {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        maxRedirects: 5
+        timeout: 60000,
+        maxRedirects: 5,
       });
 
       const postUrl = getFinalUrl(loginRes);

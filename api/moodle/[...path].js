@@ -14,9 +14,13 @@ export default async function handler(req, res) {
   try {
     // Prepare headers to forward
     const headers = {
-      'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': req.headers['accept'] || 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': req.headers['accept-language'] || 'en-US,en;q=0.5',
+      'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': req.headers['accept'] || 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Language': req.headers['accept-language'] || 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      // Critical: Set Origin and Referer to Moodle's domain to bypass CSRF checks
+      'Origin': MOODLE_BASE,
+      'Referer': `${MOODLE_BASE}/login/index.php`,
     };
 
     // Forward cookies
@@ -28,6 +32,8 @@ export default async function handler(req, res) {
     // Handle content type for POST requests
     if (req.method === 'POST') {
       headers['Content-Type'] = req.headers['content-type'] || 'application/x-www-form-urlencoded';
+      // Update Referer to match the actual endpoint being accessed
+      headers['Referer'] = moodleUrl;
     }
 
     // Prepare fetch options
@@ -78,6 +84,9 @@ export default async function handler(req, res) {
         headers['Cookie'] = (headers['Cookie'] ? headers['Cookie'] + '; ' : '') + 
           setCookies.split(',').map(c => c.split(';')[0]).join('; ');
       }
+
+      // Update Referer for the redirect request
+      headers['Referer'] = finalUrl;
 
       response = await fetch(location, {
         method: 'GET',
